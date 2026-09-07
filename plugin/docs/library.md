@@ -27,6 +27,10 @@ came from the library.
   dropped bytes.
 - `EditorWebViewSetup.cpp` exposes both over the bridge; the UI side is
   `useLibrary` + `LibraryBrowser`, rendered as the browser's Library tab.
+- `blockMenu.tsx` holds the right-click rows a block carries. A gallery
+  tile and the expanded detail card are two views of one block, so they
+  build their menu from the same function rather than each listing rows of
+  their own.
 
 ## Paths
 
@@ -53,12 +57,13 @@ would add.
 Four ways, and the library shows whatever is in the folder regardless of
 which was used:
 
-- **Save to Library** on a tile menu files the block's *active model*,
-  bytes and all, from its model cache. This is the one that matters for
-  catalog tones: the bytes are already in memory from the download, so
-  filing them costs nothing, needs no account, and the copy outlives the
-  session. Named `<tone> - <model>` (collapsed to one name when the model
-  adds nothing), uniqued with ` (2)` rather than overwriting.
+- **Save to Library** on a block's right-click menu (its gallery tile or
+  its expanded card) files the block's *active model*, bytes and all, from
+  its model cache. This is the one that matters for catalog tones: the
+  bytes are already in memory from the download, so filing them costs
+  nothing, needs no account, and the copy outlives the session. Named
+  `<tone> - <model>` (collapsed to one name when the model adds nothing),
+  uniqued with ` (2)` rather than overwriting.
 - **Drop** files or a folder on the browser. Bytes ride the bridge as
   base64 (the webview never exposes paths) and are validated exactly like
   a drop on a tile, so nothing unloadable lands in the library. A dropped

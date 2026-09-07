@@ -1,17 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useSortable } from '@dnd-kit/react/sortable';
-import {
-  ArrowLeftRight,
-  ClipboardPaste,
-  Copy,
-  File,
-  FolderClosed,
-  PlusCircle,
-  Power,
-  Save,
-  Trash2,
-  Upload,
-} from './icons';
+import { ArrowLeftRight, PlusCircle, Power, Trash2, Upload } from './icons';
 import { BlockEnergyBorder, BlockLed } from './BlockLed';
 import { ToneImage } from './GearIcon';
 import { LoadingDots } from './LoadingDots';
@@ -22,8 +11,7 @@ import { HELP, helpProps, toneTileHelp } from './helpText';
 import type { ChainSide, ToneBlock } from '../types/chain';
 import { ChromeIconButton } from './ChromeIconButton';
 import { TileMenu } from './TileMenu';
-import type { TileMenuAnchor, TileMenuItem } from './TileMenu';
-import type { ChainActions } from '../hooks/useChainActions';
+import { insertSlotMenuItems, toneBlockMenuItems, useTileMenu } from './blockMenu';
 import { useToast } from './Toast';
 import { GRAY, ICON_SIZE, SURFACE, SURFACE_RAISED } from './theme';
 
@@ -70,99 +58,6 @@ const disarmFileDrag = (e: React.DragEvent, setArmed: (v: boolean) => void) => {
 /** Keep tile buttons from taking focus on press: the webview scrolls the
     focused element into view, which nudges the whole lane by a pixel. */
 const preventFocus = (e: React.MouseEvent) => e.preventDefault();
-
-/** Right-click → tile-local anchor for the tile's action sheet (suppresses
-    the OS context menu; macOS ctrl-click lands here too). Ctrl-click also
-    fires a synthetic `click` after `contextmenu`; `shouldIgnoreClick`
-    swallows that so the tile doesn't navigate away under the menu. */
-const useTileMenu = () => {
-  const [menuAnchor, setMenuAnchor] = useState<TileMenuAnchor | null>(null);
-  const suppressClickRef = useRef(false);
-  const openMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    suppressClickRef.current = true;
-    // Viewport coords: TileMenu portals to body and positions with
-    // position:fixed at these real-px coordinates.
-    setMenuAnchor({ clientX: e.clientX, clientY: e.clientY });
-  }, []);
-  const closeMenu = useCallback(() => setMenuAnchor(null), []);
-  /** True when a tile click should be ignored (followed a contextmenu, is a
-      modifier-click, or the menu is already open, in which case it closes). */
-  const shouldIgnoreClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (suppressClickRef.current) {
-        suppressClickRef.current = false;
-        return true;
-      }
-      if (e.ctrlKey || e.metaKey) return true;
-      if (menuAnchor) {
-        closeMenu();
-        return true;
-      }
-      return false;
-    },
-    [menuAnchor, closeMenu]
-  );
-  return { menuAnchor, openMenu, closeMenu, shouldIgnoreClick };
-};
-
-/** The tile menus' native-picker rows (Load File / Load Folder). Local
-    loading must not depend on drag-and-drop alone: Linux never delivers OS
-    file drags to the embedded webview, so there these rows are the only way
-    local files get in. An insert slot adds; a tone tile swaps in place
-    (same targeting as a drop). */
-const localLoadMenuItems = (
-  targetBlockId: string,
-  actions: ChainActions,
-  toast: ReturnType<typeof useToast>
-): TileMenuItem[] => {
-  const pick = async (kind: 'file' | 'folder') => {
-    const error = await actions.pickLocalFile(targetBlockId, kind);
-    if (error) toast.show(error);
-  };
-  return [
-    {
-      label: 'Load File',
-      icon: <File size={16} />,
-      help: HELP.loadFileTile,
-      onSelect: () => void pick('file'),
-    },
-    {
-      label: 'Load Folder',
-      icon: <FolderClosed size={16} />,
-      help: HELP.loadFolderTile,
-      onSelect: () => void pick('folder'),
-    },
-  ];
-};
-
-/** The tile menus' library rows. The library is the local, always-available
-    counterpart to browsing TONE3000: "From Library" opens the browser on it
-    with this tile as the target, and (on a tone tile) "Save to Library"
-    files the tone playing here so it's one click away next time. */
-const libraryMenuItems = (
-  open: () => void,
-  save: (() => Promise<string>) | null,
-  toast: ReturnType<typeof useToast>
-): TileMenuItem[] => [
-  {
-    label: 'From Library',
-    icon: <FolderClosed size={16} />,
-    help: HELP.fromLibraryTile,
-    onSelect: open,
-  },
-  ...(save
-    ? [
-        {
-          label: 'Save to Library',
-          icon: <Save size={16} />,
-          help: HELP.saveToLibraryTile,
-          onSelect: () => void save().then((message) => toast.show(message)),
-        },
-      ]
-    : []),
-];
 
 /** Interactive wiring for a tile's chrome. */
 interface TileActions {
@@ -459,20 +354,7 @@ export const GalleryBlock: React.FC<GalleryBlockProps> = React.memo(
           <TileMenu
             anchor={menuAnchor}
             onClose={closeMenu}
-            items={[
-              {
-                label: 'Copy',
-                icon: <Copy size={16} />,
-                help: HELP.copyBlock,
-                onSelect: () => actions.copyBlock(blockId),
-              },
-              ...libraryMenuItems(
-                () => actions.swapFromLibrary(blockId),
-                () => actions.saveToLibrary(blockId),
-                toast
-              ),
-              ...localLoadMenuItems(blockId, actions, toast),
-            ]}
+            items={toneBlockMenuItems(blockId, actions, toast)}
           />
         )}
       </div>
@@ -614,17 +496,7 @@ export const AddTile: React.FC<AddTileProps> = ({
         <TileMenu
           anchor={menuAnchor}
           onClose={closeMenu}
-          items={[
-            {
-              label: 'Paste',
-              icon: <ClipboardPaste size={16} />,
-              help: HELP.pasteBlock,
-              disabled: onPaste == null,
-              onSelect: () => onPaste?.(),
-            },
-            ...libraryMenuItems(() => void actions.addFromLibrary(group, id), null, toast),
-            ...localLoadMenuItems(id, actions, toast),
-          ]}
+          items={insertSlotMenuItems(id, group, actions, toast, onPaste)}
         />
       )}
     </div>

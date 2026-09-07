@@ -45,6 +45,8 @@ import { FormatBadge } from './FormatBadge';
 import { HELP, helpProps } from './helpText';
 import { useBlockNormalizeControlEnabled, useBlockSizeControlEnabled } from './uiPreferences';
 import { useToast } from './Toast';
+import { TileMenu } from './TileMenu';
+import { toneBlockMenuItems, useTileMenu } from './blockMenu';
 import { ChromeIconButton, ChromeTextButton, chromeIcon } from './ChromeIconButton';
 import { T3K_API } from '../t3k/config';
 import {
@@ -258,6 +260,12 @@ export const ChainBlock: React.FC<ChainBlockProps> = ({
   const [eqOn, setEqOn] = useState(params.eq?.enabled ?? true);
   const [eqPre, setEqPre] = useState(params.eq?.pre ?? false);
   const toast = useToast();
+  // The card carries the same right-click action sheet as this block's
+  // gallery tile (see blockMenu): the tile and the card are two views of
+  // one block, so the gesture that works on one works on the other. Only
+  // the anchor and menu are needed here — the card has no whole-surface
+  // click to swallow afterwards, unlike a tile.
+  const { menuAnchor, openMenu, closeMenu } = useTileMenu();
   // True while one of this card's knobs is grabbed; knob prop syncs pause
   // so a stale chain snapshot can't fight the pointer (same pattern as
   // BlockEqView). On release the deferred revision bump resyncs everyone.
@@ -605,6 +613,7 @@ export const ChainBlock: React.FC<ChainBlockProps> = ({
         </button>
 
         <div
+          onContextMenu={openMenu}
           style={{
             display: 'flex',
             flexDirection: 'column',
@@ -1191,6 +1200,14 @@ export const ChainBlock: React.FC<ChainBlockProps> = ({
           </div>
         </div>
       </div>
+
+      {menuAnchor && (
+        <TileMenu
+          anchor={menuAnchor}
+          onClose={closeMenu}
+          items={toneBlockMenuItems(blockId, actions, toast)}
+        />
+      )}
     </div>
   );
 };
