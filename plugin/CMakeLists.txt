@@ -167,6 +167,8 @@ target_sources(${PROJECT_NAME}
         src/AutoOffset.cpp
         include/PresetManager.h
         src/PresetManager.cpp
+        include/ToneLibrary.h
+        src/ToneLibrary.cpp
         include/Processor.h
         src/Processor.cpp
         include/MidiMapper.h
@@ -176,6 +178,7 @@ target_sources(${PROJECT_NAME}
         src/ProcessorPresets.cpp
         src/ProcessorState.cpp
         src/ProcessorModelLoader.cpp
+        src/ProcessorLibrary.cpp
         include/ChainDomain.h
         include/NamEngine.h
         src/NamEngine.cpp

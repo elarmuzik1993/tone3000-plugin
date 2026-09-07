@@ -238,6 +238,29 @@ void TONE3000Editor::loadMainUrlIfNeeded() {
 void TONE3000Editor::pickLocalToneFile(
     bool pickFolder, const juce::String& targetBlockId,
     juce::WebBrowserComponent::NativeFunctionCompletion completion) {
+  chooseLocalFile(
+      pickFolder, pickFolder ? "Load Folder" : "Load File",
+      [this, target = targetBlockId.toStdString()](const juce::File& pick) {
+        return processor.loadLocalTonePath(pick, target);
+      },
+      std::move(completion));
+}
+
+void TONE3000Editor::pickLibraryImport(
+    bool pickFolder, const juce::String& folderPath,
+    juce::WebBrowserComponent::NativeFunctionCompletion completion) {
+  chooseLocalFile(
+      pickFolder, pickFolder ? "Add Folder to Library" : "Add File to Library",
+      [this, folder = folderPath](const juce::File& pick) {
+        return processor.importPathToLibrary(folder, pick);
+      },
+      std::move(completion));
+}
+
+void TONE3000Editor::chooseLocalFile(
+    bool pickFolder, const juce::String& dialogTitle,
+    std::function<juce::var(const juce::File&)> handlePick,
+    juce::WebBrowserComponent::NativeFunctionCompletion completion) {
   auto cancelled = [] {
     juce::DynamicObject::Ptr result = new juce::DynamicObject();
     result->setProperty("cancelled", true);
@@ -252,8 +275,7 @@ void TONE3000Editor::pickLocalToneFile(
   }
 
   localFileChooser = std::make_unique<juce::FileChooser>(
-      pickFolder ? "Load Folder" : "Load File", juce::File{},
-      pickFolder ? juce::String("*") : juce::String("*.nam;*.wav"));
+      dialogTitle, juce::File{}, pickFolder ? juce::String("*") : juce::String("*.nam;*.wav"));
 
   const int flags = juce::FileBrowserComponent::openMode |
                     (pickFolder ? juce::FileBrowserComponent::canSelectDirectories
@@ -265,7 +287,7 @@ void TONE3000Editor::pickLocalToneFile(
   // platform that still delivers the callback mid-teardown.
   juce::Component::SafePointer<TONE3000Editor> self(this);
   localFileChooser->launchAsync(
-      flags, [self, cancelled, target = targetBlockId.toStdString(),
+      flags, [self, cancelled, handlePick = std::move(handlePick),
               completion = std::move(completion)](const juce::FileChooser& chooser) {
         if (self == nullptr)
           return;
@@ -280,7 +302,7 @@ void TONE3000Editor::pickLocalToneFile(
           completion(cancelled());
           return;
         }
-        completion(self->processor.loadLocalTonePath(results.getReference(0), target));
+        completion(handlePick(results.getReference(0)));
       });
 }
 

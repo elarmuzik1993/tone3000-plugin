@@ -22,6 +22,7 @@ target_sources(DspTests PRIVATE
     src/dsp_tests.cpp
     src/duplicate_tests.cpp
     src/ir_temp_file_tests.cpp
+    src/library_tests.cpp
     src/local_load_tests.cpp
     src/midi_map_tests.cpp
     src/multicore_tests.cpp
@@ -45,10 +46,12 @@ target_sources(DspTests PRIVATE
     ../plugin/src/Processor.cpp
     ../plugin/src/ProcessorChain.cpp
     ../plugin/src/ProcessorHistory.cpp
+    ../plugin/src/ProcessorLibrary.cpp
     ../plugin/src/ProcessorModelLoader.cpp
     ../plugin/src/ProcessorPresets.cpp
     ../plugin/src/ProcessorState.cpp
     ../plugin/src/Spread.cpp
+    ../plugin/src/ToneLibrary.cpp
     ../plugin/src/StereoOffset.cpp
     ../plugin/src/TunerDetector.cpp
 )
