@@ -219,7 +219,11 @@ export const HELP = {
   libraryRemove: 'Remove: take this out of the library (moved to the trash).',
   copyBlock: 'Copy: copy this block (tone, model and all settings).',
   pasteBlock: 'Paste: add a copy of the copied block in this slot.',
-  fromLibraryTile: 'From Library: pick a tone from your own library folder. Works offline.',
+  fromLibraryTile: 'From Library: pick a saved tone from your library folders. Works offline.',
+  libraryMenuFolder: 'Folder: open it to pick a tone, or load the whole folder as one block.',
+  libraryMenuTone: 'Load this tone from your library into this block.',
+  libraryMenuLoadAll: 'Load all: this folder as one block, one model per file.',
+  libraryMenuBrowse: 'Browse Library: open the full library view (add, rename, remove).',
   saveToLibraryTile: 'Save to Library: keep this tone in your library folder, ready to reload.',
   loadFileTile: 'Load File: pick a local .nam or IR .wav file to load here. No account needed.',
   loadFolderTile:

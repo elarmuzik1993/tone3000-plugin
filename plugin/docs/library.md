@@ -52,6 +52,21 @@ folder tree is both organization and a way to build multi-model tones by
 hand. The listing's `models` count per folder is exactly what loading it
 would add.
 
+## Picking a tone without leaving the chain
+
+The Library row of a block's right-click menu opens the folder tree *in
+the menu*: folders cascade, a tone loads on click (into that slot, or
+swapping that block in place), and a folder holding more than one tone
+offers "Load all (N)" to take the whole thing as one multi-model block.
+Two gestures from playing to played, with no takeover in between; the
+browser is still one row away ("Browse Library", which opens on the
+folder the menu had reached).
+
+The rows are read from `listLibrary` when a row opens, one folder at a
+time, so the menu costs nothing until it is used. A folder past 40 tones
+lists the first 40 and hands the rest to the browser: a context menu
+listing a hundred captures is a wall, not a shortcut.
+
 ## Getting tones in
 
 Four ways, and the library shows whatever is in the folder regardless of

@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ClipboardPaste, Copy, File, FolderClosed, Save } from './icons';
+import { ClipboardPaste, Copy, File, FolderClosed, PlusCircle, Save, Search } from './icons';
 import { HELP } from './helpText';
+import { rememberLibraryFolder } from '../hooks/useLibrary';
 import type { TileMenuAnchor, TileMenuItem } from './TileMenu';
 import type { ChainActions } from '../hooks/useChainActions';
 import type { useToast } from './Toast';
@@ -89,20 +90,114 @@ const localLoadMenuItems = (
   ];
 };
 
+/** Rows past this many in one folder are left to the browser: a context
+    menu listing a hundred captures is a wall, not a shortcut. */
+const MAX_FOLDER_ROWS = 40;
+
+/**
+ * One library folder as menu rows, read from native when the row opens.
+ * Subfolders open their own submenu, tones load into the target block on
+ * the spot, and the last row hands off to the browser for anything the
+ * menu can't do (renaming, removing, adding files).
+ *
+ * The whole point is that a tone you have filed is two gestures away:
+ * right-click, pick it. Nothing here opens the browser takeover unless the
+ * user asks for it.
+ */
+const libraryFolderItems = async (
+  path: string,
+  targetBlockId: string,
+  actions: ChainActions,
+  toast: Toast,
+  openBrowser: () => void
+): Promise<TileMenuItem[]> => {
+  const browseRow = (label: string): TileMenuItem => ({
+    label,
+    icon: <Search size={16} />,
+    help: HELP.libraryMenuBrowse,
+    onSelect: () => {
+      // Open the browser where the menu had got to, not back at the root.
+      rememberLibraryFolder(path);
+      openBrowser();
+    },
+  });
+
+  const listing = await actions.listLibrary(path);
+  if (!listing || listing.error) {
+    return [
+      {
+        label: listing?.error ?? "Couldn't read the library",
+        icon: null,
+        help: HELP.libraryMenuTone,
+        disabled: true,
+      },
+      browseRow('Browse Library'),
+    ];
+  }
+
+  const load = (itemPath: string) => {
+    void actions.loadFromLibrary(targetBlockId, itemPath).then((error) => {
+      if (error) toast.show(error);
+    });
+  };
+
+  const folders: TileMenuItem[] = listing.folders.map((folder) => ({
+    label: folder.name,
+    icon: <FolderClosed size={16} />,
+    help: HELP.libraryMenuFolder,
+    submenu: () => libraryFolderItems(folder.path, targetBlockId, actions, toast, openBrowser),
+  }));
+
+  const tones: TileMenuItem[] = listing.models.slice(0, MAX_FOLDER_ROWS).map((model) => ({
+    label: model.name,
+    icon: <File size={16} />,
+    help: HELP.libraryMenuTone,
+    onSelect: () => load(model.path),
+  }));
+
+  const rows: TileMenuItem[] = [];
+  // A folder is a unit as well as a container: loading it makes one block
+  // with a model per file. Offered inside the folder, above its contents.
+  if (path !== '' && listing.models.length > 1) {
+    rows.push({
+      label: `Load all (${listing.models.length})`,
+      icon: <PlusCircle size={16} />,
+      help: HELP.libraryMenuLoadAll,
+      onSelect: () => load(path),
+    });
+  }
+  rows.push(...folders, ...tones);
+
+  if (rows.length === 0) {
+    rows.push({
+      label: path === '' ? 'Library is empty' : 'Empty folder',
+      icon: null,
+      help: HELP.libraryMenuTone,
+      disabled: true,
+    });
+  }
+  rows.push(
+    browseRow(listing.models.length > MAX_FOLDER_ROWS ? 'Show all in Library' : 'Browse Library')
+  );
+  return rows;
+};
+
 /** The library rows. The library is the local, always-available counterpart
-    to browsing TONE3000: "From Library" opens the browser on it with this
-    block as the target, and (on a tone block) "Save to Library" files the
-    tone playing here so it's one click away next time. */
+    to browsing TONE3000: "From Library" opens the user's own folders right
+    in the menu, and (on a tone block) "Save to Library" files the tone
+    playing here so it's one gesture away next time. */
 const libraryMenuItems = (
-  open: () => void,
-  save: (() => Promise<string>) | null,
-  toast: Toast
+  blockId: string,
+  actions: ChainActions,
+  toast: Toast,
+  openBrowser: () => void,
+  save: (() => Promise<string>) | null
 ): TileMenuItem[] => [
   {
     label: 'From Library',
     icon: <FolderClosed size={16} />,
     help: HELP.fromLibraryTile,
-    onSelect: open,
+    submenu: () => libraryFolderItems('', blockId, actions, toast, openBrowser),
   },
   ...(save
     ? [
@@ -130,9 +225,11 @@ export const toneBlockMenuItems = (
     onSelect: () => actions.copyBlock(blockId),
   },
   ...libraryMenuItems(
+    blockId,
+    actions,
+    toast,
     () => actions.swapFromLibrary(blockId),
-    () => actions.saveToLibrary(blockId),
-    toast
+    () => actions.saveToLibrary(blockId)
   ),
   ...localLoadMenuItems(blockId, actions, toast),
 ];
@@ -153,6 +250,12 @@ export const insertSlotMenuItems = (
     disabled: onPaste == null,
     onSelect: () => onPaste?.(),
   },
-  ...libraryMenuItems(() => void actions.addFromLibrary(side, slotId), null, toast),
+  ...libraryMenuItems(
+    slotId,
+    actions,
+    toast,
+    () => void actions.addFromLibrary(side, slotId),
+    null
+  ),
   ...localLoadMenuItems(slotId, actions, toast),
 ];

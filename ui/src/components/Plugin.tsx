@@ -27,6 +27,7 @@ import { ConnectionModal } from './ConnectionModal';
 import { ToneBrowser } from './ToneBrowser';
 import type { BrowserTab } from './browserTabs';
 import { readLibraryFolder } from '../hooks/useLibrary';
+import type { LibraryListing } from '../types/library';
 import { UpdateNotice } from './UpdateNotice';
 import Settings, { type SettingsTab } from './Settings';
 import { T3K_API } from '../t3k/config';
@@ -108,6 +109,7 @@ export const Plugin: React.FC = () => {
   const saveBlockToLibrary = useNativeFunction<{ path?: string; name?: string; error?: string }>(
     'saveBlockToLibrary'
   );
+  const listLibrary = useNativeFunction<LibraryListing>('listLibrary');
 
   const openSettings = useCallback((tab: SettingsTab) => {
     settingsTabRef.current = tab;
@@ -361,6 +363,14 @@ export const Plugin: React.FC = () => {
     [saveBlockToLibrary]
   );
 
+  // Load a library entry straight into a block (the right-click menu's
+  // Library submenu). Same call the browser's Library tab makes, with the
+  // target named outright instead of coming from a pending-target slot.
+  const handleLoadFromLibrary = useCallback(
+    (targetBlockId: string, itemPath: string) => actions.loadLibraryTone(itemPath, targetBlockId),
+    [actions]
+  );
+
   // Non-blocking update check (enabled via VITE_T3K_UPDATE_NOTICE); also
   // resolves the running build's version for the Settings footer.
   const { notice: updateNotice, update, localVersion, remindLater } = useUpdateNotice(t3kClient);
@@ -376,6 +386,8 @@ export const Plugin: React.FC = () => {
   const chainActions = useMemo<ChainActions>(
     () => ({
       addModel: loadFlow.handleAddModel,
+      listLibrary,
+      loadFromLibrary: handleLoadFromLibrary,
       addFromLibrary: loadFlow.handleAddFromLibrary,
       swapFromLibrary: loadFlow.handleSwapFromLibrary,
       saveToLibrary: handleSaveToLibrary,
@@ -412,8 +424,10 @@ export const Plugin: React.FC = () => {
       authenticated,
       handleLogin,
       handlePickLocalFile,
+      handleLoadFromLibrary,
       handleRetryLoad,
       handleSaveToLibrary,
+      listLibrary,
       handleShareBlock,
       handleSwitchModel,
       loadFlow.handleAddFromLibrary,

@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { BlockParamName, ChainSide, EqBand, ToneBlock } from '../types/chain';
+import type { LibraryListing } from '../types/library';
 import type { Model, Tone } from '../types/tone';
 
 /**
@@ -15,6 +16,15 @@ import type { Model, Tone } from '../types/tone';
 export interface ChainActions {
   /** Launch the Select flow, adding into the clicked insert slot. */
   addModel: (side: ChainSide, insertBlockId: string) => void;
+  /** One folder of the tone library, for the right-click menu's Library
+      submenu (root-relative path, '' for the root). Reads the disk; no
+      account, no network. */
+  listLibrary: (folderPath: string) => Promise<LibraryListing | null>;
+  /** Load a library entry straight into this block, no browser in between:
+      the tone picked from that submenu. A file loads as itself, a folder as
+      one multi-model block. Resolves to a user-facing error message, or
+      null on success. */
+  loadFromLibrary: (targetBlockId: string, itemPath: string) => Promise<string | null>;
   /** Open the browser on the Library tab, adding the picked tone into this
       insert slot. The local counterpart to `addModel`: no account, no
       download, and the fallback `addModel` itself takes when the OS reports

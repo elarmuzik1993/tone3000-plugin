@@ -31,7 +31,9 @@ export const readLibraryFolder = (): string => {
   }
 };
 
-const rememberLibraryFolder = (path: string) => {
+/** Point the browser's Library tab at a folder before opening it (the tile
+    menu's "Browse Library" row hands off the folder it was showing). */
+export const rememberLibraryFolder = (path: string) => {
   try {
     localStorage.setItem(FOLDER_STORAGE_KEY, path);
   } catch {
