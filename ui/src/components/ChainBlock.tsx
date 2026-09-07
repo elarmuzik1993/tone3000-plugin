@@ -265,7 +265,7 @@ export const ChainBlock: React.FC<ChainBlockProps> = ({
   // one block, so the gesture that works on one works on the other. Only
   // the anchor and menu are needed here — the card has no whole-surface
   // click to swallow afterwards, unlike a tile.
-  const { menuAnchor, openMenu, closeMenu } = useTileMenu();
+  const { menuAnchor, openMenu, closeMenu, shouldIgnoreClick } = useTileMenu();
   // True while one of this card's knobs is grabbed; knob prop syncs pause
   // so a stale chain snapshot can't fight the pointer (same pattern as
   // BlockEqView). On release the deferred revision bump resyncs everyone.
@@ -614,6 +614,16 @@ export const ChainBlock: React.FC<ChainBlockProps> = ({
 
         <div
           onContextMenu={openMenu}
+          // macOS ctrl-click fires `contextmenu` and then a real `click`.
+          // On a tile that click is the tile's own; here it would land on
+          // whatever control sits under the cursor (power, back, the model
+          // picker), so it is swallowed in the capture phase before it can.
+          onClickCapture={(e) => {
+            if (shouldIgnoreClick(e)) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
           style={{
             display: 'flex',
             flexDirection: 'column',

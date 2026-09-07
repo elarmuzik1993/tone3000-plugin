@@ -19,17 +19,38 @@ juce::var errorResult(const juce::String& message) {
   return juce::var(obj.get());
 }
 
-/** Loadable files under `dir` (subfolders included), capped: the count is
-    only ever rendered as a badge, and walking a folder someone pointed at
-    their whole sample drive shouldn't stall the browser. */
-int countModelFiles(const juce::File& dir) {
+/** NAM and IR files under `dir`, subfolders included, counted separately.
+    Lazy and bounded: RangedDirectoryIterator yields as it walks, so the
+    cap actually stops the walk (findChildFiles would build the whole
+    listing first), and a folder someone pointed at their sample drive
+    can't stall the browser. Symlinks are not followed — the count runs on
+    the message thread and a link loop would never return. */
+struct ModelCounts {
+  int nam = 0;
+  int ir = 0;
+  /** Everything the plugin can load in here. */
+  int total() const { return nam + ir; }
+  /** What loading this folder would actually add: one tone per file of the
+      majority extension (see loadLocalTonePath). */
+  int loadable() const { return std::max(nam, ir); }
+};
+
+ModelCounts countModelFiles(const juce::File& dir) {
   constexpr int limit = 1000;
-  int count = 0;
-  for (const auto& file : dir.findChildFiles(juce::File::findFiles, true)) {
-    if (ToneLibrary::isModelFile(file) && ++count >= limit)
+  ModelCounts counts;
+  if (!dir.isDirectory())
+    return counts;
+  for (const auto& entry : juce::RangedDirectoryIterator(dir, true, "*", juce::File::findFiles,
+                                                         juce::File::FollowSymlinks::no)) {
+    const juce::File file = entry.getFile();
+    if (file.getFileExtension().equalsIgnoreCase(".nam"))
+      ++counts.nam;
+    else if (file.getFileExtension().equalsIgnoreCase(".wav"))
+      ++counts.ir;
+    if (counts.total() >= limit)
       break;
   }
-  return count;
+  return counts;
 }
 
 /** Natural name order ("amp 2" before "amp 10"), the order the local-load
@@ -92,8 +113,12 @@ juce::File ToneLibrary::resolve(const juce::String& relativePath) const {
       return {};
     file = file.getChildFile(segment);
   }
-  // Belt and braces: a segment that resolved through a symlink out of the
-  // library still fails here.
+  // Belt and braces on the path itself: getChildFile takes an absolute
+  // segment ("C:" on Windows) as the whole path, and this catches the
+  // result landing outside the library. It is a path check, not a symlink
+  // one: the library folder is the user's own, and a link they put inside
+  // it pointing elsewhere is their business — but nothing derived from a
+  // *string* can escape.
   return file.isAChildOf(root) ? file : juce::File();
 }
 
@@ -129,7 +154,7 @@ juce::var ToneLibrary::list(const juce::String& relativePath) const {
     juce::DynamicObject::Ptr entry = new juce::DynamicObject();
     entry->setProperty("name", folder.getFileName());
     entry->setProperty("path", relativePathOf(folder));
-    entry->setProperty("models", countModelFiles(folder));
+    entry->setProperty("models", countModelFiles(folder).total());
     folders.add(juce::var(entry.get()));
   }
 
@@ -146,6 +171,11 @@ juce::var ToneLibrary::list(const juce::String& relativePath) const {
     models.add(juce::var(entry.get()));
   }
 
+  // What loading this folder as one block would add: its whole tree's
+  // majority extension, not the files listed above (which are only its
+  // direct children). The menu's "Load all" row says this number.
+  const ModelCounts counts = countModelFiles(dir);
+
   juce::DynamicObject::Ptr result = new juce::DynamicObject();
   const juce::String path = relativePathOf(dir);
   result->setProperty("path", path);
@@ -156,11 +186,12 @@ juce::var ToneLibrary::list(const juce::String& relativePath) const {
                                             : juce::var(relativePathOf(dir.getParentDirectory())));
   result->setProperty("folders", folders);
   result->setProperty("models", models);
+  result->setProperty("loadable", counts.loadable());
   return juce::var(result.get());
 }
 
-juce::var ToneLibrary::createFolder(const juce::String& parentPath,
-                                    const juce::String& name) const {
+juce::var ToneLibrary::createFolder(const juce::String& parentPath, const juce::String& name,
+                                    bool unique) const {
   const juce::File parent = resolve(parentPath);
   if (parent == juce::File())
     return errorResult("That folder isn't in the library");
@@ -169,7 +200,9 @@ juce::var ToneLibrary::createFolder(const juce::String& parentPath,
   if (clean.isEmpty())
     return errorResult("Enter a folder name");
 
-  const juce::File folder = parent.getChildFile(clean);
+  // `unique` is for the importer, which must never fail on a name it did
+  // not choose; the New Folder action wants the collision reported.
+  const juce::File folder = unique ? uniqueChild(parent, clean, {}) : parent.getChildFile(clean);
   if (folder.exists())
     return errorResult("A folder with that name already exists");
   if (!folder.createDirectory().wasOk())
@@ -261,9 +294,10 @@ juce::var ToneLibrary::importFrom(const juce::String& folderPath,
   // the plugin can't load: the tree is the structure the user already made,
   // and flattening it here would throw that away.
   juce::Array<juce::File> files;
-  for (const auto& file : source.findChildFiles(juce::File::findFiles, true))
-    if (isModelFile(file))
-      files.add(file);
+  for (const auto& entry : juce::RangedDirectoryIterator(source, true, "*", juce::File::findFiles,
+                                                         juce::File::FollowSymlinks::no))
+    if (isModelFile(entry.getFile()))
+      files.add(entry.getFile());
   if (files.isEmpty())
     return errorResult("No .nam or .wav files in that folder");
 
@@ -289,14 +323,35 @@ juce::var ToneLibrary::importFrom(const juce::String& folderPath,
 
 juce::var ToneLibrary::write(const juce::String& folderPath, const juce::String& name,
                              const void* data, size_t size) const {
-  const juce::File folder = resolve(folderPath);
+  // `name` may carry a relative subpath ("Marshall/JCM800.nam"): a dropped
+  // folder arrives as a flat list of files whose shape lives in these
+  // names, and it should land in the library with that shape intact, the
+  // same as one copied in through the picker. Each segment is sanitized and
+  // resolved, so the subpath can no more escape the library than any other.
+  // Split on the last separator by index: JUCE's upToLastOccurrenceOf and
+  // fromLastOccurrenceOf both return the *whole* string when the separator
+  // isn't there, which for a plain "amp.nam" would file it under a folder
+  // of its own name.
+  const int slash = name.lastIndexOfChar('/');
+  const juce::String subfolder = slash >= 0 ? name.substring(0, slash) : juce::String();
+  const juce::String filename = slash >= 0 ? name.substring(slash + 1) : name;
+
+  juce::String targetPath = folderPath;
+  for (const auto& segment : juce::StringArray::fromTokens(subfolder, "/", {})) {
+    const juce::String clean = sanitizeName(segment);
+    if (clean.isEmpty())
+      continue;
+    targetPath = targetPath.isEmpty() ? clean : targetPath + "/" + clean;
+  }
+
+  const juce::File folder = resolve(targetPath);
   if (folder == juce::File())
     return errorResult("That folder isn't in the library");
   if (!folder.createDirectory().wasOk())
     return errorResult("Couldn't open the library folder");
 
-  const juce::String extension = name.fromLastOccurrenceOf(".", true, false).toLowerCase();
-  const juce::String base = sanitizeName(name.upToLastOccurrenceOf(".", false, false));
+  const juce::String extension = filename.fromLastOccurrenceOf(".", true, false).toLowerCase();
+  const juce::String base = sanitizeName(filename.upToLastOccurrenceOf(".", false, false));
   if (base.isEmpty() || (extension != ".nam" && extension != ".wav"))
     return errorResult("Only .nam and .wav files are supported");
 

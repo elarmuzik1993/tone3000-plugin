@@ -184,6 +184,54 @@ TEST_F(LibraryTest, DroppedFilesAreValidatedBeforeTheyLand) {
   EXPECT_EQ(rejected["error"].toString(), juce::String("Not a valid NAM file"));
 }
 
+TEST_F(LibraryTest, DroppedNamesCarryTheirSubfolderAndCannotEscape) {
+  // A dropped folder arrives flat, its shape carried in the entry names, and
+  // has to land on disk the same way the picker's copy would.
+  const juce::String amp = base64Of(testFile("a2-amp-test.nam"));
+  const juce::var result = proc.importFilesToLibrary(
+      "", juce::var(juce::Array<juce::var>{fileEntry("Pack/Marshall/JCM800.nam", amp),
+                                           fileEntry("Pack/plain.nam", amp),
+                                           // Nothing built from a name may
+                                           // climb out of the library.
+                                           fileEntry("../escaped.nam", amp)}));
+  ASSERT_TRUE(result["error"].isVoid()) << result["error"].toString().toStdString();
+  EXPECT_EQ(static_cast<int>(result["copied"]), 3);
+
+  EXPECT_TRUE(root.getChildFile("Pack/Marshall/JCM800.nam").existsAsFile());
+  EXPECT_TRUE(root.getChildFile("Pack/plain.nam").existsAsFile());
+  EXPECT_TRUE(root.getChildFile("escaped.nam").existsAsFile()) << "flattened into the library";
+  EXPECT_FALSE(root.getParentDirectory().getChildFile("escaped.nam").exists());
+}
+
+TEST_F(LibraryTest, CreateFolderUniquesOnlyWhenAsked) {
+  ASSERT_EQ(proc.createLibraryFolder("", "Pack")["path"].toString(), juce::String("Pack"));
+  // The New Folder action reports the collision...
+  EXPECT_FALSE(proc.createLibraryFolder("", "Pack")["error"].isVoid());
+  // ...while an import, which didn't choose the name, sits beside it.
+  EXPECT_EQ(proc.createLibraryFolder("", "Pack", true)["path"].toString(),
+            juce::String("Pack (2)"));
+}
+
+TEST_F(LibraryTest, ListingCountsWhatLoadingTheFolderWouldAdd) {
+  // Majority extension decides NAM vs IR, and the count is recursive: this
+  // folder loads as two NAM models, not the one IR sitting at its top.
+  place("Pack/cab.wav", "cab-ir-test.wav");
+  place("Pack/Captures/amp.nam", "a2-amp-test.nam");
+  place("Pack/Captures/cab.nam", "a2-amp-cab-test.nam");
+
+  const juce::var listing = proc.listLibrary("Pack");
+  EXPECT_EQ(namesOf(listing, "models"), juce::StringArray({"cab"}));
+  EXPECT_EQ(static_cast<int>(listing["loadable"]), 2);
+  // The browser's per-folder badge counts everything loadable under it.
+  EXPECT_EQ(static_cast<int>(proc.listLibrary("")["folders"][0]["models"]), 3);
+
+  // And loading it really does add those two.
+  const juce::var res = proc.loadLibraryTone("Pack");
+  ASSERT_TRUE(res["error"].isVoid()) << res["error"].toString().toStdString();
+  ASSERT_TRUE(waitForChainLoaded(proc));
+  EXPECT_EQ(firstToneBlock(proc)["tone"]["models"].size(), 2);
+}
+
 TEST_F(LibraryTest, LoadingAnEntryMakesTheSameLocalBlockADropWould) {
   place("Amps/Twin.nam", "a2-amp-test.nam");
 

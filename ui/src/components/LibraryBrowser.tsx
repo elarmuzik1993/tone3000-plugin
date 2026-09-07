@@ -297,13 +297,16 @@ export const LibraryBrowser: React.FC<LibraryBrowserProps> = ({ onLoad }) => {
       e.preventDefault();
       dragDepth.current = 0;
       setDropArmed(false);
-      const item = e.dataTransfer.items[0];
-      if (!item) return;
-      // Synchronous reads: the DataTransferItem goes inert once the handler
-      // yields (the entry/file objects stay usable).
-      const entry = item.webkitGetAsEntry();
-      const file = entry?.isDirectory ? null : item.getAsFile();
-      report(await importDrop(entry, file));
+      // Everything dropped, not just the first thing: a tile takes one tone,
+      // but the library is a folder and a drop of six captures means six.
+      // Read synchronously — a DataTransferItem goes inert as soon as this
+      // handler yields (the entry/file objects it hands back stay usable).
+      const items = Array.from(e.dataTransfer.items).map((item) => {
+        const entry = item.webkitGetAsEntry();
+        return { entry, file: entry?.isDirectory ? null : item.getAsFile() };
+      });
+      if (items.length === 0) return;
+      report(await importDrop(items));
     },
     [importDrop, report]
   );
@@ -564,8 +567,8 @@ export const LibraryBrowser: React.FC<LibraryBrowserProps> = ({ onLoad }) => {
             >
               {path === '' ? 'Your library is empty.' : 'This folder is empty.'}
               <br />
-              Drop .nam or .wav files here, use Add Files, or right-click a tone in the chain and
-              pick Save to Library.
+              Drop .nam or .wav files here, use Add, or right-click a tone in the chain and pick
+              Save to Library.
             </div>
           )}
         </div>

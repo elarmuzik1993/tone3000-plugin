@@ -22,6 +22,11 @@ import { BORDER, DISABLED_OPACITY, HIGHLIGHT, MUTED, WHITE } from './theme';
  */
 
 export interface TileMenuItem {
+  /** Identity for React and for tracking which row's submenu is open.
+      Defaults to the label, which is unique among the fixed rows but not
+      among library entries — a folder `Amps` and a file `Amps.nam` list
+      under the same label, so those rows pass their path. */
+  id?: string;
   label: string;
   icon: React.ReactNode;
   /** One-line hint for the faceplate help readout. */
@@ -106,7 +111,7 @@ const MenuPanel: React.FC<{
   // the parent re-renders that rebuild the same menu.
   const itemCount = items.length;
   const [openRow, setOpenRow] = useState<{
-    label: string;
+    id: string;
     rect: DOMRect;
     items: TileMenuItem[] | null;
   } | null>(null);
@@ -148,13 +153,12 @@ const MenuPanel: React.FC<{
 
   const openSubmenu = useCallback((item: TileMenuItem, row: HTMLElement) => {
     if (!item.submenu) return;
+    const id = item.id ?? item.label;
     const rect = row.getBoundingClientRect();
-    setOpenRow({ label: item.label, rect, items: null });
+    setOpenRow({ id, rect, items: null });
     void Promise.resolve(item.submenu()).then((loaded) =>
       // Ignore a load that lost the race to another row.
-      setOpenRow((current) =>
-        current?.label === item.label ? { ...current, items: loaded } : current
-      )
+      setOpenRow((current) => (current?.id === id ? { ...current, items: loaded } : current))
     );
   }, []);
 
@@ -166,10 +170,10 @@ const MenuPanel: React.FC<{
         setOpenRow(null);
         return;
       }
-      if (openRow?.label === item.label) return;
+      if (openRow?.id === (item.id ?? item.label)) return;
       hoverTimerRef.current = window.setTimeout(() => openSubmenu(item, row), SUBMENU_HOVER_MS);
     },
-    [openRow?.label, openSubmenu]
+    [openRow?.id, openSubmenu]
   );
 
   return (
@@ -194,10 +198,11 @@ const MenuPanel: React.FC<{
     >
       <style>{rowStyles}</style>
       {items.map((item) => {
-        const isOpen = openRow?.label === item.label;
+        const id = item.id ?? item.label;
+        const isOpen = openRow?.id === id;
         return (
           <button
-            key={item.label}
+            key={id}
             type="button"
             className={`tile-menu-item${isOpen ? ' tile-menu-open' : ''}`}
             disabled={item.disabled}
@@ -264,7 +269,7 @@ const MenuPanel: React.FC<{
           // panel. Without it React reuses this instance and the new
           // submenu inherits the old one's open child and placement, which
           // strands that grandchild panel on screen.
-          key={openRow.label}
+          key={openRow.id}
           items={openRow.items ?? [LOADING_ITEM]}
           position={{
             left: openRow.rect.right + SUBMENU_GAP,

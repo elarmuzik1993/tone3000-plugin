@@ -459,10 +459,13 @@ juce::WebBrowserComponent::Options buildMainWebViewOptions(TONE3000Editor* edito
             editor->pickLibraryImport(pickFolder, folderPath, std::move(completion));
           })
       .withNativeFunction(
-          // (parentPath, name)
+          // (parentPath, name, unique?): `unique` suffixes a taken name
+          // instead of failing, for drops (which don't get to pick one).
           "createLibraryFolder",
           guarded(2, juce::var(), [editor](const juce::Array<juce::var>& args) {
-            return editor->processor.createLibraryFolder(args[0].toString(), args[1].toString());
+            const bool unique = args.size() >= 3 && coerceBool(args[2]);
+            return editor->processor.createLibraryFolder(args[0].toString(), args[1].toString(),
+                                                         unique);
           }))
       .withNativeFunction(
           // (itemPath, newName): files keep their extension.

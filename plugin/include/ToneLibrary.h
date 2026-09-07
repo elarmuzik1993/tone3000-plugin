@@ -49,17 +49,24 @@ public:
   juce::String relativePathOf(const juce::File& file) const;
 
   /** One folder's contents, as the UI's browser renders it:
-        { path, name, parent, folders: [{ name, path, models }],
+        { path, name, parent, loadable,
+          folders: [{ name, path, models }],
           models:  [{ name, path, kind, size, modified }] }
-      `kind` is "nam" or "ir"; a folder's `models` is how many loadable
-      files it holds (recursively, matching what loading it would add).
-      Everything else in the folder is ignored, not hidden: the user's own
-      README or sample audio just doesn't show up. Returns { error } when
-      the path escapes the library or isn't a folder. */
+      `kind` is "nam" or "ir"; a folder's `models` is every loadable file
+      under it (recursively), and the listing's own `loadable` is what
+      loading *this* folder as one block would add — its tree's majority
+      extension, which is the number the menu's "Load all" row shows. Both
+      counts stop at 1000. Everything else in the folder is ignored, not
+      hidden: the user's own README or sample audio just doesn't show up.
+      Returns { error } when the path escapes the library or isn't a
+      folder. */
   juce::var list(const juce::String& relativePath) const;
 
-  /** Create a subfolder. Returns { path } or { error }. */
-  juce::var createFolder(const juce::String& parentPath, const juce::String& name) const;
+  /** Create a subfolder. `unique` suffixes " (2)" rather than failing on a
+      name that is taken, for the importer (which doesn't get to pick).
+      Returns { path } or { error }. */
+  juce::var createFolder(const juce::String& parentPath, const juce::String& name,
+                         bool unique = false) const;
 
   /** Rename a file or folder in place, keeping a file's extension. Returns
       { path } or { error }. */
@@ -75,7 +82,9 @@ public:
   juce::var importFrom(const juce::String& folderPath, const juce::File& source) const;
 
   /** Write already-validated bytes into `folderPath` under `name`,
-      uniquing the name against what's there. Returns { path, name } or
+      uniquing the name against what's there. `name` may carry a relative
+      subpath ("Marshall/JCM800.nam"), whose folders are created as needed,
+      so a dropped folder keeps its shape. Returns { path, name } or
       { error }. */
   juce::var write(const juce::String& folderPath, const juce::String& name, const void* data,
                   size_t size) const;

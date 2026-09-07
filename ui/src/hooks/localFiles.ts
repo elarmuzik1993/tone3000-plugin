@@ -50,24 +50,39 @@ export const isModelFile = (name: string) => {
 /** All files under a dropped directory, subfolders included. readEntries
     hands out batches (Chromium caps them at 100), so each reader drains in
     a loop. */
-export const readDirectoryFiles = async (root: FileSystemDirectoryEntry): Promise<File[]> => {
-  const files: File[] = [];
-  const pending: FileSystemDirectoryEntry[] = [root];
+export const readDirectoryFiles = async (root: FileSystemDirectoryEntry): Promise<File[]> =>
+  (await readDirectoryTree(root)).map((entry) => entry.file);
+
+/** A file from a dropped folder, with where it sat inside it. */
+export interface DroppedFile {
+  file: File;
+  /** Path relative to the dropped folder ("Marshall/JCM800.nam"). */
+  path: string;
+}
+
+/** Like readDirectoryFiles, but keeping each file's place in the tree, for
+    the callers that reproduce the folder rather than flattening it. */
+export const readDirectoryTree = async (root: FileSystemDirectoryEntry): Promise<DroppedFile[]> => {
+  const files: DroppedFile[] = [];
+  const pending: { dir: FileSystemDirectoryEntry; path: string }[] = [{ dir: root, path: '' }];
   while (pending.length > 0) {
-    const reader = pending.pop()!.createReader();
+    const { dir, path } = pending.pop()!;
+    const reader = dir.createReader();
     for (;;) {
       const entries = await new Promise<FileSystemEntry[]>((resolve, reject) =>
         reader.readEntries(resolve, reject)
       );
       if (entries.length === 0) break;
       for (const entry of entries) {
-        if (entry.isDirectory) pending.push(entry as FileSystemDirectoryEntry);
-        else
-          files.push(
-            await new Promise<File>((resolve, reject) =>
-              (entry as FileSystemFileEntry).file(resolve, reject)
-            )
+        const entryPath = path === '' ? entry.name : `${path}/${entry.name}`;
+        if (entry.isDirectory) {
+          pending.push({ dir: entry as FileSystemDirectoryEntry, path: entryPath });
+        } else {
+          const file = await new Promise<File>((resolve, reject) =>
+            (entry as FileSystemFileEntry).file(resolve, reject)
           );
+          files.push({ file, path: entryPath });
+        }
       }
     }
   }

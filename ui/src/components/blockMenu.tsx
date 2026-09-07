@@ -142,6 +142,7 @@ const libraryFolderItems = async (
   };
 
   const folders: TileMenuItem[] = listing.folders.map((folder) => ({
+    id: `folder:${folder.path}`,
     label: folder.name,
     icon: <FolderClosed size={16} />,
     help: HELP.libraryMenuFolder,
@@ -157,10 +158,13 @@ const libraryFolderItems = async (
 
   const rows: TileMenuItem[] = [];
   // A folder is a unit as well as a container: loading it makes one block
-  // with a model per file. Offered inside the folder, above its contents.
-  if (path !== '' && listing.models.length > 1) {
+  // with a model per file. `loadable` counts its whole tree's majority
+  // extension, which is exactly what that load adds — not the same as the
+  // direct children listed below (a folder whose tones all sit in
+  // subfolders still loads, and a mixed folder loads only the larger half).
+  if (path !== '' && listing.loadable > 1) {
     rows.push({
-      label: `Load all (${listing.models.length})`,
+      label: `Load all (${listing.loadable})`,
       icon: <PlusCircle size={16} />,
       help: HELP.libraryMenuLoadAll,
       onSelect: () => load(path),

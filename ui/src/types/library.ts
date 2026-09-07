@@ -23,6 +23,10 @@ export interface LibraryListing {
   path: string;
   name: string;
   parent?: string;
+  /** What loading this folder as one block would add: every loadable file
+      under it of the majority extension (NAM vs IR). Not the length of
+      `models`, which is only this folder's direct children. */
+  loadable: number;
   folders: LibraryFolder[];
   models: LibraryModel[];
   error?: string;

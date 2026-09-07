@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNativeFunction } from './useFunction';
-import { MAX_LOCAL_FILE_BYTES, isModelFile, readDirectoryFiles, toPayload } from './localFiles';
+import {
+  MAX_FOLDER_MODELS,
+  MAX_LOCAL_FILE_BYTES,
+  isModelFile,
+  readDirectoryTree,
+  readFileBase64,
+} from './localFiles';
 import type { LibraryListing } from '../types/library';
 
 /**
@@ -40,6 +46,18 @@ export const rememberLibraryFolder = (path: string) => {
     // Private-mode storage failures are not worth failing navigation over.
   }
 };
+
+/** One thing the user dropped, snapshotted synchronously from the event (a
+    DataTransferItem goes inert as soon as the handler yields). */
+export interface DroppedItem {
+  entry: FileSystemEntry | null;
+  file: File | null;
+}
+
+/** Files per bridge call while filing a drop. The bytes travel as base64
+    strings, so a whole folder in one call would peak at several times its
+    size in memory; this bounds that without a call per file. */
+const IMPORT_BATCH = 20;
 
 /** Native's { error } | payload result, narrowed. */
 const errorOf = (result: { error?: string } | null, fallback: string): string | null =>
@@ -150,36 +168,81 @@ export function useLibrary() {
     [importPickNative, path, refresh]
   );
 
-  /** Files dropped on the browser. A dropped folder keeps its name: it
-      becomes a library folder, which is the whole point of dropping one. */
+  /**
+   * Everything dropped on the browser, filed into the folder on show.
+   *
+   * A dropped folder keeps its name *and its shape*: its files ride the
+   * bridge under relative paths and native recreates the subfolders, so a
+   * drop and an Add Folder leave the same thing on disk. A drop can carry
+   * several files or folders, and they are read and shipped in batches —
+   * the bytes travel as base64, and a whole capture pack encoded at once
+   * would take the webview down with it.
+   */
   const importDrop = useCallback(
-    async (entry: FileSystemEntry | null, file: File | null): Promise<string | null> => {
+    async (items: DroppedItem[]): Promise<string | null> => {
       try {
-        if (entry?.isDirectory) {
-          const all = await readDirectoryFiles(entry as FileSystemDirectoryEntry);
-          const files = all.filter((f) => isModelFile(f.name));
-          if (files.length === 0) return 'No .nam or .wav files in the folder';
-          if (files.some((f) => f.size > MAX_LOCAL_FILE_BYTES)) return 'A file is too large';
-
-          const folder = await createFolderNative(path, entry.name);
-          if (!folder?.path) return folder?.error ?? "Couldn't create the folder";
-          const result = await importFilesNative(folder.path, await toPayload(files));
-          await refresh();
-          return errorOf(result, "Couldn't add those files");
+        // Collect the whole drop first, so the caps below judge it as one.
+        const files: { name: string; file: File }[] = [];
+        for (const item of items) {
+          if (item.entry?.isDirectory) {
+            const folderName = item.entry.name;
+            const tree = await readDirectoryTree(item.entry as FileSystemDirectoryEntry);
+            for (const { file, path: relative } of tree)
+              if (isModelFile(file.name)) files.push({ name: `${folderName}/${relative}`, file });
+          } else if (item.file && isModelFile(item.file.name)) {
+            files.push({ name: item.file.name, file: item.file });
+          }
         }
 
-        if (!file) return "Couldn't read the dropped file";
-        if (!isModelFile(file.name)) return 'Only .nam and .wav files are supported';
-        if (file.size > MAX_LOCAL_FILE_BYTES) return 'File is too large';
-        const result = await importFilesNative(path, await toPayload([file]));
+        if (files.length === 0) return 'Only .nam and .wav files are supported';
+        if (files.some(({ file }) => file.size > MAX_LOCAL_FILE_BYTES))
+          return 'A file is too large';
+        // Add Folder has no such cap: it copies on the native side, where
+        // nothing has to be encoded or held in memory.
+        if (files.length > MAX_FOLDER_MODELS)
+          return `Too many files (max ${MAX_FOLDER_MODELS}) \u2014 use Add Folder instead`;
+
+        // Each dropped folder is created once, up front and uniqued, so a
+        // second drop of the same pack sits beside the first instead of
+        // merging into it. (Native uniques file names; the folder is ours.)
+        const roots = new Map<string, string>();
+        for (const { name } of files) {
+          const top = name.includes('/') ? name.slice(0, name.indexOf('/')) : null;
+          if (top === null || roots.has(top)) continue;
+          const created = await createFolderNative(path, top, true);
+          if (!created?.path) return created?.error ?? "Couldn't create the folder";
+          roots.set(top, created.path.slice(created.path.lastIndexOf('/') + 1));
+        }
+
+        let copied = 0;
+        let firstError: string | null = null;
+        const created = [...roots.values()].map((name) => (path ? `${path}/${name}` : name));
+        for (let i = 0; i < files.length; i += IMPORT_BATCH) {
+          const payload = await Promise.all(
+            files.slice(i, i + IMPORT_BATCH).map(async ({ name, file }) => {
+              // Retarget onto the (possibly uniqued) folder we just made.
+              const top = name.includes('/') ? name.slice(0, name.indexOf('/')) : null;
+              const renamed = top ? `${roots.get(top)}${name.slice(top.length)}` : name;
+              return { name: renamed, data: await readFileBase64(file) };
+            })
+          );
+          const result = await importFilesNative(path, payload);
+          copied += result?.copied ?? 0;
+          if (firstError === null && result?.error) firstError = result.error;
+        }
+        // A drop where nothing survived validation must not leave the
+        // folders it was going to fill sitting there empty.
+        if (copied === 0) for (const folder of created) await removeNative(folder);
         await refresh();
-        return errorOf(result, "Couldn't add that file");
+        // Some files landing is a success; the message is for a drop where
+        // nothing did (which for a single file is exactly that file's).
+        return copied > 0 ? null : (firstError ?? "Couldn't add those files");
       } catch (err) {
         console.error('Library drop failed:', err);
-        return "Couldn't read the dropped file";
+        return "Couldn't read the dropped files";
       }
     },
-    [createFolderNative, importFilesNative, path, refresh]
+    [createFolderNative, importFilesNative, path, refresh, removeNative]
   );
 
   /** Open the current folder in Finder/Explorer. */

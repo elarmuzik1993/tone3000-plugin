@@ -136,7 +136,10 @@ public:
   // Copy files dropped on the browser into `folderPath`. Same
   // [{ name, data }] base64 payload as loadLocalTone (the webview can't
   // hand over paths), and the same validation, so nothing unloadable lands
-  // in the library. Returns { copied, skipped } or { error }.
+  // in the library. An entry's name may carry a relative subpath, which is
+  // how a dropped folder keeps its shape (see ToneLibrary::write); the UI
+  // sends the tree in batches, so this can be called several times for one
+  // drop. Returns { copied, skipped } or { error }.
   juce::var importFilesToLibrary(const juce::String& folderPath, const juce::var& files);
   // Copy a file or folder the user picked in the OS dialog into
   // `folderPath`. Unlike the drop path these are only checked by extension:
@@ -144,7 +147,10 @@ public:
   // Finder/Explorer, and the loader validates on load. Returns
   // { path, name, copied } or { error }.
   juce::var importPathToLibrary(const juce::String& folderPath, const juce::File& source);
-  juce::var createLibraryFolder(const juce::String& parentPath, const juce::String& name);
+  // `unique` suffixes a taken name rather than failing (the importer's
+  // path; the New Folder action wants the collision reported).
+  juce::var createLibraryFolder(const juce::String& parentPath, const juce::String& name,
+                                bool unique = false);
   juce::var renameLibraryItem(const juce::String& itemPath, const juce::String& newName);
   bool removeLibraryItem(const juce::String& itemPath);
   // Open a library folder in the OS file manager (the "organize it yourself"

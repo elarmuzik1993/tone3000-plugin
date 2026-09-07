@@ -163,8 +163,8 @@ juce::var TONE3000Processor::importPathToLibrary(const juce::String& folderPath,
 }
 
 juce::var TONE3000Processor::createLibraryFolder(const juce::String& parentPath,
-                                                 const juce::String& name) {
-  return library.createFolder(parentPath, name);
+                                                 const juce::String& name, bool unique) {
+  return library.createFolder(parentPath, name, unique);
 }
 
 juce::var TONE3000Processor::renameLibraryItem(const juce::String& itemPath,
