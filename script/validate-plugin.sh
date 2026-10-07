@@ -133,7 +133,8 @@ for format in "${formats[@]}"; do
         continue
       fi
       target="$artefacts/CLAP/TONE3000.clap"
-      if [ ! -d "$target" ]; then
+      # A bundle directory on macOS, a single shared library on Linux/Windows.
+      if [ ! -e "$target" ]; then
         echo "Not found: $target (build it first: cmake --build build)" >&2
         failures+=(CLAP)
         continue
