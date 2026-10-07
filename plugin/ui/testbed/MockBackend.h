@@ -117,6 +117,7 @@ public:
 
   juce::var getMeterLevels() override;
   void setTunerEnabled(bool) override {}
+  void setTunerMuted(bool) override {}
   juce::var getTunerReading() override { return signal_ != nullptr ? signal_->tuner() : tuner_; }
   void startAutoBalance() override {}
   void cancelAutoBalance() override {}
