@@ -1069,6 +1069,25 @@ struct FocusPolicyTests : juce::UnitTest {
   static bool key(juce::ComponentPeer& peer, int code, juce::ModifierKeys mods = {}) {
     return peer.handleKeyPress(juce::KeyPress(code, mods, 0));
   }
+  // JUCE grants keyboard focus only once the OS has focused the window; a
+  // run from a terminal or CI may not be allowed to take it (false). The
+  // peer asks the OS, so it can report focus while the OS focus-in event
+  // still sits in X's queue, unhandled until other window traffic wakes the
+  // loop. Handled mid-test, it focuses the window and pulls focus off what
+  // the test just focused (a menu a click opened). Repaints wake the loop,
+  // so a few frames of them land it before the test starts.
+  static bool takeOsFocus(juce::DocumentWindow& window, juce::ComponentPeer& peer) {
+    juce::Process::makeForegroundProcess();
+    window.toFront(true);
+    peer.grabFocus();
+    for (int i = 0; i < 20 && !peer.isFocused(); ++i) pump(50);
+    if (!peer.isFocused()) return false;
+    for (int i = 0; i < 10; ++i) {
+      window.repaint();
+      pump(10);
+    }
+    return true;
+  }
   // A primary click at the component's centre, through the peer.
   static void click(juce::ComponentPeer& peer, juce::Component& target) {
     const auto pos = peer.getComponent().getLocalPoint(&target, target.getLocalBounds().getCentre().toFloat());
@@ -1097,13 +1116,7 @@ struct FocusPolicyTests : juce::UnitTest {
       expect(false, "no window peer");
       return;
     }
-    // JUCE grants keyboard focus only once the OS has focused the window;
-    // a run from a terminal or CI may not be allowed to take it.
-    juce::Process::makeForegroundProcess();
-    window.toFront(true);
-    peer->grabFocus();
-    for (int i = 0; i < 20 && !peer->isFocused(); ++i) pump(50);
-    if (!peer->isFocused()) {
+    if (!takeOsFocus(window, *peer)) {
       logMessage("the window could not take OS focus here; focus policy not exercised");
       return;
     }
@@ -1196,12 +1209,7 @@ struct LiveScenario {
       test.expect(false, "no window peer");
       return;
     }
-    // JUCE grants keyboard focus only once the OS has focused the window.
-    juce::Process::makeForegroundProcess();
-    window->toFront(true);
-    peer->grabFocus();
-    for (int i = 0; i < 20 && !peer->isFocused(); ++i) pump(50);
-    ok = peer->isFocused();
+    ok = FocusPolicyTests::takeOsFocus(*window, *peer);
     if (!ok) test.logMessage("the window could not take OS focus here; " + scenarioId + " not exercised");
   }
   ~LiveScenario() {
